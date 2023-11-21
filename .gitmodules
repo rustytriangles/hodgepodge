@@ -1,0 +1,3 @@
+[submodule "hub75"]
+	path = hub75
+	url = git@github.com:rustytriangles/hub75.git
