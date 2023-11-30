@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,6 +11,8 @@
 
 #include "hub75.hpp"
 
+#define BLOCK 1
+//#define BIG_PANEL 1
 #ifdef BIG_PANEL
 const uint32_t FB_WIDTH = 256;
 const uint8_t FB_HEIGHT = 64;
@@ -24,17 +27,19 @@ const uint32_t GRID_WIDTH  = 128;
 const uint32_t GRID_HEIGHT = 64;
 #endif
 
-constexpr float g = 7.f;
-constexpr float k1 = 2.f;
-constexpr float k2 = 3.f;
+constexpr float g = 4.5f;
+constexpr float k1 = 1.6f;
+constexpr float k2 = 2.2f;
+constexpr float k3 = 0.175f;
 
 Pixel colormap[256];
 
 void init_colormap() {
-    for (int i=0; i<256; i++) {
+    colormap[0] = Pixel(0,0,0);
+    for (int i=1; i<256; i++) {
         const float f = (float)i / 255.f;
 //        colormap[i] = hsv_to_rgb(f / 3.f, 1.f, (1.f + 2.f * f) / 3.f);
-        colormap[i] = hsv_to_rgb(0.2f + f / 2.f, 0.75f, 0.75f);
+        colormap[i] = hsv_to_rgb(0.2f + f / 2.f, 0.75f, sqrt(f));
     }
 }
 
@@ -48,6 +53,21 @@ void rand_init() {
 float random_between(float minval, float maxval) {
     float v = (float)std::rand() / (float)RAND_MAX;
     return minval + v*(maxval - minval);
+}
+
+std::pair<uint32_t,uint32_t> rand_range(uint32_t w) {
+#ifdef BLOCK
+    uint32_t v1 = (uint32_t)random_between(0.f, (float)(w-1));
+    uint32_t v2 = (uint32_t)random_between(0.f, (float)(w-1));
+
+    if (v1 < v2) {
+        return std::make_pair(v1,v2);
+    } else {
+        return std::make_pair(v2,v1);
+    }
+#else
+    return std::make_pair(0,w-1);
+#endif
 }
 
 Hub75 hub75(FB_WIDTH, FB_HEIGHT, nullptr, PANEL_GENERIC, true);
@@ -82,20 +102,24 @@ std::pair<unsigned int,unsigned int> grid_to_framebuffer(uint32_t x,uint32_t y,
     }
 }
 
+unsigned char to_byte(float v) {
+    return (unsigned char)std::max(0.f, std::min(255.f, v));
+}
+
 unsigned char sane_calc(const unsigned char old_val,
                         const float a,
                         const float b,
                         const float s) {
     const float new_val = (a/k1 + b/k2);
-    return (unsigned char)std::max(0.f, std::min(255.f, new_val));
+    return to_byte(new_val);
 }
 
 unsigned char infected_calc(const unsigned char old_val,
                             const float a,
                             const float b,
                             const float s) {
-    const float new_val = (s/b + g);
-    return (unsigned char)std::max(0.f, std::min(255.f, new_val));
+    const float new_val = (k3*s/b + g);
+    return to_byte(new_val);
 }
 
 int main() {
@@ -112,6 +136,8 @@ int main() {
 
     int counter = 0;
 
+    const int probe_x = -1;
+    const int probe_y = -1;
     while (true) {
 
         hub75.clear();
@@ -124,9 +150,11 @@ int main() {
             new_frame = true;
 
             clear_grid(prev_buff);
-            for (uint32_t x=0; x<GRID_WIDTH; x++) {
-                for (uint32_t y=0; y<GRID_HEIGHT; y++) {
-                    const float f = random_between(0.f,256.f);
+            std::pair<uint32_t,uint32_t> xrange = rand_range(GRID_WIDTH);
+            std::pair<uint32_t,uint32_t> yrange = rand_range(GRID_HEIGHT);
+            for (uint32_t x=xrange.first; x<= xrange.second; x++) {
+                for (uint32_t y=yrange.first; y<=yrange.second; y++) {
+                    const float f = random_between(0.f,255.f);
                     const unsigned char v = (unsigned char)f;
 //                    printf("%g -> %d ", f, (int)v);
                     grid[prev_buff][x][y] = v;
@@ -166,12 +194,14 @@ int main() {
                             [prev_buff]
                             [(x+xo+GRID_WIDTH)%GRID_WIDTH]
                             [(y+yo+GRID_HEIGHT)%GRID_HEIGHT];
-                        if (v == 0) {
-                            ;
-                        } else if (v < 255) {
-                            a += 1.f;
-                        } else {
-                            b += 1.f;
+                        if (x != 0 || y != 0) {
+                            if (v == 0) {
+                                ;
+                            } else if (v < 255) {
+                                a += 1.f;
+                            } else {
+                                b += 1.f;
+                            }
                         }
                         s += (float)v;
                     }
@@ -183,23 +213,32 @@ int main() {
                 case 0:
                     // sane
                     new_val = sane_calc(old_val, a, b, s);
-//                    if (new_frame) {
+                    if (new_frame) {
 //                        printf("SANE: grid[%d][%d]\n",x,y);
 //                        printf("  a = %g, b = %g, s = %g\n", a, b, s);
 //                        printf("  %d -> %d\n", (int)old_val, (int)new_val);
-//                    }
+                    }
+                    if (x == probe_x && y == probe_y) {
+                        printf("SANE(%f,%f,%f) -> %d\n",a,b,s,(int)new_val);
+                    }
                     break;
                 case 255:
                     // ill
+                    if (x == probe_x && y == probe_y) {
+                        printf("ILL -> %d\n",(int)new_val);
+                    }
                     break;
                 default:
                     // infected
                     b += 1.f;
                     new_val = infected_calc(old_val, a, b, s);
-                    if (new_frame) {
-                        printf("INF:  grid[%d][%d]\n", x, y);
-                        printf("  a = %g, b = %g, s = %g\n", a, b, s);
-                        printf("  %d -> %d\n", (int)old_val, (int)new_val);
+//                    if (new_frame) {
+//                        printf("INF:  grid[%d][%d]\n", x, y);
+//                        printf("  a = %g, b = %g, s = %g\n", a, b, s);
+//                        printf("  %d -> %d\n", (int)old_val, (int)new_val);
+//                    }
+                    if (x == probe_x && y == probe_y) {
+                        printf("INFECTED(%f,%f,%f) -> %d\n",a,b,s,(int)new_val);
                     }
                     break;
                 }
@@ -221,6 +260,6 @@ int main() {
         hub75.flip(true); // Flip and clear to the background colour
 
         curr_buff = prev_buff;
-        sleep_ms(5);
+        sleep_ms(1);
     }
 }
