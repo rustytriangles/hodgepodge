@@ -11,7 +11,7 @@
 
 #include "hub75.hpp"
 
-#define BLOCK 1
+//#define BLOCK 1
 //#define BIG_PANEL 1
 #ifdef BIG_PANEL
 const uint32_t FB_WIDTH = 256;
@@ -27,10 +27,10 @@ const uint32_t GRID_WIDTH  = 128;
 const uint32_t GRID_HEIGHT = 64;
 #endif
 
-constexpr float g = 4.5f;
+constexpr float g = 4.25f;
 constexpr float k1 = 1.6f;
 constexpr float k2 = 2.2f;
-constexpr float k3 = 0.175f;
+constexpr float k3 = 0.125f;
 
 Pixel colormap[256];
 
@@ -38,8 +38,7 @@ void init_colormap() {
     colormap[0] = Pixel(0,0,0);
     for (int i=1; i<256; i++) {
         const float f = (float)i / 255.f;
-//        colormap[i] = hsv_to_rgb(f / 3.f, 1.f, (1.f + 2.f * f) / 3.f);
-        colormap[i] = hsv_to_rgb(0.2f + f / 2.f, 0.75f, sqrt(f));
+        colormap[i] = hsv_to_rgb(0.4f + f * 0.375, 0.875f, f);
     }
 }
 
@@ -107,18 +106,18 @@ unsigned char to_byte(float v) {
 }
 
 unsigned char sane_calc(const unsigned char old_val,
-                        const float a,
-                        const float b,
+                        const int a,
+                        const int b,
                         const float s) {
-    const float new_val = (a/k1 + b/k2);
+    const float new_val = ((float)a/k1 + (float)b/k2);
     return to_byte(new_val);
 }
 
 unsigned char infected_calc(const unsigned char old_val,
-                            const float a,
-                            const float b,
+                            const int a,
+                            const int b,
                             const float s) {
-    const float new_val = (k3*s/b + g);
+    const float new_val = (k3*s/(float)b + g);
     return to_byte(new_val);
 }
 
@@ -185,8 +184,8 @@ int main() {
 
         for (int x=0; x<GRID_WIDTH; x++) {
             for (int y=0; y<GRID_HEIGHT; y++) {
-                float a = 0.f;
-                float b = 0.f;
+                int a = 0;
+                int b = 0;
                 float s = 0.f;
                 for (int xo=-1; xo<=1; xo++) {
                     for (int yo=-1; yo<=1; yo++) {
@@ -198,9 +197,9 @@ int main() {
                             if (v == 0) {
                                 ;
                             } else if (v < 255) {
-                                a += 1.f;
+                                a += 1;
                             } else {
-                                b += 1.f;
+                                b += 1;
                             }
                         }
                         s += (float)v;
@@ -215,11 +214,11 @@ int main() {
                     new_val = sane_calc(old_val, a, b, s);
                     if (new_frame) {
 //                        printf("SANE: grid[%d][%d]\n",x,y);
-//                        printf("  a = %g, b = %g, s = %g\n", a, b, s);
+//                        printf("  a = %d, b = %d, s = %g\n", a, b, s);
 //                        printf("  %d -> %d\n", (int)old_val, (int)new_val);
                     }
                     if (x == probe_x && y == probe_y) {
-                        printf("SANE(%f,%f,%f) -> %d\n",a,b,s,(int)new_val);
+                        printf("SANE(%d,%d,%f) -> %d\n",a,b,s,(int)new_val);
                     }
                     break;
                 case 255:
@@ -230,15 +229,15 @@ int main() {
                     break;
                 default:
                     // infected
-                    b += 1.f;
+                    b += 1;
                     new_val = infected_calc(old_val, a, b, s);
 //                    if (new_frame) {
 //                        printf("INF:  grid[%d][%d]\n", x, y);
-//                        printf("  a = %g, b = %g, s = %g\n", a, b, s);
+//                        printf("  a = %d, b = %d, s = %g\n", a, b, s);
 //                        printf("  %d -> %d\n", (int)old_val, (int)new_val);
 //                    }
                     if (x == probe_x && y == probe_y) {
-                        printf("INFECTED(%f,%f,%f) -> %d\n",a,b,s,(int)new_val);
+                        printf("INFECTED(%d,%d,%f) -> %d\n",a,b,s,(int)new_val);
                     }
                     break;
                 }
